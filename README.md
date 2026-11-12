@@ -21,8 +21,15 @@ uv sync
 uv run uvicorn app.main:app --reload
 ```
 
-- Sağlık kontrolü: http://127.0.0.1:8000/health → `{"status": "ok"}`
 - API dokümantasyonu: http://127.0.0.1:8000/docs
+
+## Endpoint'ler
+
+| Metod | Path      | Yanıt (200)                                                      |
+|-------|-----------|------------------------------------------------------------------|
+| GET   | `/health` | `{"status": "ok", "service": "fuelpay-tsm", "version": "0.1.0"}` |
+
+`version` alanı `app.main` içindeki FastAPI uygulama sürümüyle aynı olmalı; testler bunu kontrol eder.
 
 ## Testleri çalıştırma
 
@@ -30,7 +37,16 @@ uv run uvicorn app.main:app --reload
 uv run pytest
 ```
 
-Ayarlar `pyproject.toml` içindeki `[tool.pytest.ini_options]` bölümünde.
+Ayarlar `pyproject.toml` içindeki `[tool.pytest.ini_options]` bölümünde. Testler `fastapi.testclient.TestClient` ile uygulamayı ağ açmadan, process içinde çağırır; server'ın çalışıyor olması gerekmez.
+
+## Lint ve format
+
+```bash
+uv run ruff check .
+uv run ruff format .
+```
+
+Kural seti `pyproject.toml` içindeki `[tool.ruff.lint]` bölümünde (`E`, `W`, `F`, `I`, `UP`, `B`). Commit öncesi ikisinin de temiz olması beklenir; CI'da kontrol için `uv run ruff format --check .` kullanılabilir.
 
 ## Notlar
 
