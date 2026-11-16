@@ -9,10 +9,10 @@ Servis `local`, `test`, `staging` ve `production` ortamlarında çalışacak. Or
 
 ## Karar
 
-1. **Ayarlar tek bir tipli sınıfta.** `app/core/config.py` içindeki `Settings(BaseSettings)` (pydantic-settings) ortam değişkenlerinden ve `.env` dosyasından okur. Ortam değişkeni `.env`'i ezer. Tüm değişkenler `FUELPAY_` prefix'i alır. `ENVIRONMENT` bir `Literal`, yani dört değerden biri olmak zorunda.
+1. **Ayarlar tek bir tipli sınıfta.** `app/core/config.py` içindeki `Settings(BaseSettings)` (pydantic-settings) ortam değişkenlerinden ve `.env` dosyasından okur. Ortam değişkeni `.env`'i ezer. Tüm değişkenler `FUELPAY_` prefix'i alır. `environment` alanı bir `Literal`, yani dört değerden biri olmak zorunda.
 2. **Ayarlara tek giriş noktası `get_settings()`.** `@lru_cache` ile bir kez okunur. Endpoint'ler ayarları `Depends(get_settings)` ile alır. Testler `get_settings.cache_clear()` ile yeniden okutur.
 3. **Uygulama `create_app()` fabrikasıyla kurulur.** Modül düzeyinde `app` nesnesi yoktur. Server `uvicorn app.main:create_app --factory` ile başlar. `app.main`'i import etmek ayar okumaz.
-4. **`DOCS_ENABLED`'ın varsayılanı yok, zorunlu.** `ENVIRONMENT` için de aynısı geçerli. Eksik ya da geçersiz değer, uygulamayı açılışta `ValidationError` ile durdurur.
+4. **`docs_enabled` alanının varsayılanı yok, zorunlu.** `environment` için de aynısı geçerli. Eksik ya da geçersiz değer, uygulamayı açılışta `ValidationError` ile durdurur.
 
 ## Alternatifler
 
@@ -21,8 +21,8 @@ Servis `local`, `test`, `staging` ve `production` ortamlarında çalışacak. Or
 - **Prefix'siz değişken adları (`ENVIRONMENT`):** Reddedildi. Aynı host ya da container'daki başka araçların değişkenleriyle çakışır ve hangi değişkenin bu servise ait olduğu anlaşılmaz.
 - **Modül düzeyinde global `settings = Settings()` / `app = FastAPI(...)`:** Reddedildi. Ayarlar import anında, test fixture'ları çalışmadan önce okunur. Testler geliştiricinin `.env`'ini görür ve farklı ayarla app kurmak için `importlib.reload` gerekir.
 - **`create_app(settings)` ile ayarı parametre olarak geçirip testte `app.dependency_overrides` kullanmak:** Şimdilik reddedildi. Ayarı hem fabrikaya hem dependency'ye ayrı ayrı vermeyi gerektirir. İkisi ayrışabilir: docs biri ile, `/health` diğeri ile kurulur. Tek kaynak (`get_settings`) ve `cache_clear` bu boyutta yeterli.
-- **`DOCS_ENABLED=True` varsayılanı:** Reddedildi. Production'da değişkeni unutmak, API şemasını herkese açar. Hata sessiz ve güvenlik açısından yanlış yönde.
-- **`DOCS_ENABLED=False` varsayılanı:** Reddedildi. Güvenli ama sessiz: local'de `/docs` 404 verir ve neden kapalı olduğu anlaşılmaz. Zorunlu alan aynı güvenliği açık bir hata mesajıyla sağlar.
+- **`docs_enabled=True` varsayılanı:** Reddedildi. Production'da `FUELPAY_DOCS_ENABLED`'ı set etmeyi unutmak, API şemasını herkese açar. Hata sessiz ve güvenlik açısından yanlış yönde.
+- **`docs_enabled=False` varsayılanı:** Reddedildi. Güvenli ama sessiz: local'de `/docs` 404 verir ve neden kapalı olduğu anlaşılmaz. Zorunlu alan aynı güvenliği açık bir hata mesajıyla sağlar.
 
 ## Sonuçlar
 
