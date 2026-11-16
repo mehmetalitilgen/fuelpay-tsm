@@ -1,18 +1,29 @@
 import pytest
-from fastapi.testclient import TestClient
 
-from app.main import app
+from app import __version__
 
-
-@pytest.fixture(scope="module")
-def client():
-    with TestClient(app) as c:
-        yield c
+ENVIRONMENTS = ["local", "test", "staging", "production"]
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def openapi(client):
     return client.get("/openapi.json").json()
+
+
+@pytest.fixture
+def status_properties(openapi):
+    """StatusResponse alanları; $ref'ler (ör. Environment) çözülmüş hâlde."""
+    schemas = openapi["components"]["schemas"]
+
+    def resolve(prop):
+        if "$ref" in prop:
+            return schemas[prop["$ref"].rsplit("/", 1)[-1]]
+        return prop
+
+    return {
+        name: resolve(prop)
+        for name, prop in schemas["StatusResponse"]["properties"].items()
+    }
 
 
 # --- Yanıt sözleşmesi ---
@@ -28,14 +39,20 @@ def test_health_body_is_exact_contract(client):
     assert response.json() == {
         "status": "ok",
         "service": "fuelpay-tsm",
-        "version": "0.1.0",
+        "version": __version__,
+        "environment": "test",
     }
 
 
+@pytest.mark.parametrize("environment", ENVIRONMENTS)
+def test_health_environment_comes_from_settings(make_client, environment):
+    client = make_client(ENVIRONMENT=environment)
+    assert client.get("/health").json()["environment"] == environment
+
+
 def test_health_version_matches_app_version(client):
-    # health.py'deki sabit sürüm ile FastAPI app sürümü ayrışmasın.
     response = client.get("/health")
-    assert response.json()["version"] == app.version
+    assert response.json()["version"] == client.app.version
 
 
 def test_health_returns_json_content_type(client):
@@ -73,19 +90,20 @@ def test_openapi_health_response_uses_status_response_schema(openapi):
     assert schema == {"$ref": "#/components/schemas/StatusResponse"}
 
 
-def test_openapi_status_response_fields(openapi):
-    properties = openapi["components"]["schemas"]["StatusResponse"]["properties"]
-    assert set(properties) == {"status", "service", "version"}
-    assert all(p["type"] == "string" for p in properties.values())
+def test_openapi_status_response_fields(status_properties):
+    assert set(status_properties) == {"status", "service", "version", "environment"}
+    assert all(p["type"] == "string" for p in status_properties.values())
 
 
 def test_openapi_status_response_all_fields_required(openapi):
     schema = openapi["components"]["schemas"]["StatusResponse"]
-    assert set(schema["required"]) == {"status", "service", "version"}
+    assert set(schema["required"]) == {"status", "service", "version", "environment"}
 
 
-def test_openapi_status_response_literal_fields_are_const(openapi):
-    properties = openapi["components"]["schemas"]["StatusResponse"]["properties"]
+def test_openapi_status_response_literal_fields(status_properties):
+    properties = status_properties
     assert properties["status"]["const"] == "ok"
     assert properties["service"]["const"] == "fuelpay-tsm"
+    assert properties["environment"]["enum"] == ENVIRONMENTS
     assert "const" not in properties["version"]
+    assert "enum" not in properties["version"]
