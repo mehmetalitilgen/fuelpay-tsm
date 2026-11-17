@@ -9,23 +9,15 @@ from datetime import datetime
 
 import pytest
 
-STATIONS_URL = "/api/v1/stations"
+from tests.helpers import (
+    ERROR_SCHEMA,
+    STATIONS_URL,
+    create_station,
+    documented_error_schema,
+    station_payload,
+)
+
 STATION_FIELDS = {"id", "code", "name", "city", "created_at"}
-
-
-def station_payload(**overrides) -> dict:
-    """Geçerli bir istek gövdesi; testler yalnızca ilgilendikleri alanı ezer."""
-    return {
-        "code": "34-001",
-        "name": "Kadıköy İstasyonu",
-        "city": "İstanbul",
-    } | overrides
-
-
-def create_station(client, **overrides) -> dict:
-    response = client.post(STATIONS_URL, json=station_payload(**overrides))
-    assert response.status_code == 201, response.text
-    return response.json()
 
 
 # --- POST /api/v1/stations: başarılı oluşturma ---
@@ -262,3 +254,33 @@ def test_list_accepts_max_limit(client):
 def test_stations_are_only_served_under_v1_prefix(client):
     assert client.get("/stations").status_code == 404
     assert client.post("/stations", json=station_payload()).status_code == 404
+
+
+# --- OpenAPI: hata yanıtları belgelenmiş mi ---
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "code"),
+    [
+        ("post", "/api/v1/stations", 409),
+        ("get", "/api/v1/stations/{station_id}", 404),
+    ],
+)
+def test_openapi_documents_station_errors(openapi, method, path, code):
+    assert documented_error_schema(openapi, method, path, code) == ERROR_SCHEMA
+
+
+def test_openapi_error_schema_is_detail_string(openapi):
+    schema = openapi["components"]["schemas"]["ErrorResponse"]
+    assert schema["required"] == ["detail"]
+    assert schema["properties"]["detail"]["type"] == "string"
+
+
+def test_station_error_bodies_match_documented_schema(client):
+    create_station(client, code="34-001")
+    conflict = client.post(STATIONS_URL, json=station_payload(code="34-001"))
+    missing = client.get(f"{STATIONS_URL}/{uuid.uuid4()}")
+
+    for response in (conflict, missing):
+        assert set(response.json()) == {"detail"}
+        assert isinstance(response.json()["detail"], str)

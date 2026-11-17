@@ -6,11 +6,6 @@ ENVIRONMENTS = ["local", "test", "staging", "production"]
 
 
 @pytest.fixture
-def openapi(client):
-    return client.get("/openapi.json").json()
-
-
-@pytest.fixture
 def status_properties(openapi):
     """StatusResponse alanları; $ref'ler (ör. Environment) çözülmüş hâlde."""
     schemas = openapi["components"]["schemas"]

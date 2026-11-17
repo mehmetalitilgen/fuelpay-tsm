@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 
 from app.api.deps import StationRepoDep
+from app.schemas.errors import error_response
 from app.schemas.stations import (
     DEFAULT_PAGE_LIMIT,
     MAX_PAGE_LIMIT,
@@ -15,7 +16,12 @@ from app.schemas.stations import (
 router = APIRouter(prefix="/stations", tags=["stations"])
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, response_model=StationRead)
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    response_model=StationRead,
+    responses={409: error_response("Bu kodla bir istasyon zaten var")},
+)
 async def add_station(
     payload: StationCreate,
     repo: StationRepoDep,
@@ -50,7 +56,11 @@ async def list_stations(
     )
 
 
-@router.get("/{station_id}", response_model=StationRead)
+@router.get(
+    "/{station_id}",
+    response_model=StationRead,
+    responses={404: error_response("İstasyon bulunamadı")},
+)
 async def get_station(
     station_id: uuid.UUID,
     repo: StationRepoDep,

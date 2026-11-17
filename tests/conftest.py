@@ -53,3 +53,8 @@ def make_client(monkeypatch):
 @pytest.fixture
 def client(make_client):
     return make_client()
+
+
+@pytest.fixture
+def openapi(client):
+    return client.get("/openapi.json").json()

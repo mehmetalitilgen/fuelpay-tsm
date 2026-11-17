@@ -49,11 +49,23 @@ Ayarlar `app/core/config.py` içindeki `Settings` sınıfında tanımlı ve `pyd
 | POST  | `/api/v1/stations`           | 201 istasyon + `Location: /api/v1/stations/{id}` header'ı                                      | 409 kod zaten var · 422 geçersiz gövde          |
 | GET   | `/api/v1/stations`           | 200 `{"items": [...], "total": n, "limit": 50, "offset": 0}`                                   | 422 `offset < 0` ya da `limit` 1–100 dışında   |
 | GET   | `/api/v1/stations/{id}`      | 200 istasyon                                                                                   | 404 bulunamadı · 422 `id` geçerli UUID değil   |
+| POST  | `/api/v1/stations/{station_id}/terminals` | 201 terminal + `Location: /api/v1/terminals/{id}` header'ı                        | 404 istasyon yok · 409 seri no ya da pompa dolu · 422 geçersiz gövde |
+| GET   | `/api/v1/stations/{station_id}/terminals` | 200 `{"items": [...], "total": n, "limit": 50, "offset": 0}` (yalnızca o istasyon) | 404 istasyon yok · 422 `offset < 0` ya da `limit` 1–100 dışında |
+| GET   | `/api/v1/terminals/{id}`     | 200 terminal                                                                                   | 404 bulunamadı · 422 `id` geçerli UUID değil   |
 
 **İstasyon:** `{"id": "<uuid>", "code": "34-001", "name": "...", "city": "...", "created_at": "<ISO 8601, timezone'lu>"}`
 
+**Terminal:** `{"id": "<uuid>", "station_id": "<uuid>", "serial_number": "TRM00001", "pump_number": 1, "status": "registered", "created_at": "<ISO 8601, timezone'lu>"}`
+
+- **Terminal POST gövdesi:** `serial_number` ve `pump_number`, ikisi de zorunlu. `id`, `station_id`, `status` gibi başka alanlar 422 döner; istasyon URL'den gelir.
+  - `serial_number`: 8–16 karakter, yalnızca `A–Z` ve `0–9`. Baştaki ve sondaki boşluk kırpılır, büyük harfe çevrilir (`trm00001` → `TRM00001`). ASCII dışı harfler (`İ`, `ı`, `ß`…) dönüştürülmez, 422 döner.
+  - `pump_number`: 1–32 arası tam sayı. `true`/`false` 422 döner. String olarak `"3"` şu an `3` kabul ediliyor (açık soru, bkz. [FTSM-004 teslimat notu](docs/delivery/FTSM-004.md)).
+- **Terminal listesi:** İstasyon bazlıdır; tüm istasyonları dönen bir `GET /api/v1/terminals` yoktur. `pump_number`'a göre artan sırada döner; sayfalama bu sıraya göre yapılır.
+- **Tekillik:** `serial_number` tüm sistemde tekildir; aynı seri numarası başka bir istasyonda da 409 döner, harf büyüklüğü fark etmez. `pump_number` istasyon başına tekildir; aynı pompa numarası başka bir istasyonda kullanılabilir.
+
 - **POST gövdesi:** `code`, `name`, `city`, üçü de zorunlu. `code` biçimi `NN-NNN` (ör. `34-001`). `name` 1–100, `city` 1–50 karakter olmalı. Baştaki ve sondaki boşluklar kırpılır.
-- **Liste:** Ekleme sırasıyla döner. `offset` ve `limit` query parametreleri opsiyoneldir (varsayılan `0` / `50`, `limit` en fazla `100`).
+- **Hata gövdesi:** 404 ve 409 yanıtları `{"detail": "..."}` biçimindedir ve OpenAPI'de `ErrorResponse` şemasıyla belgelenmiştir (`/docs`).
+- **İstasyon listesi:** Ekleme sırasıyla döner. `offset` ve `limit` query parametreleri opsiyoneldir (varsayılan `0` / `50`, `limit` en fazla `100`).
 - **Versiyonlama:** İş endpoint'leri `/api/v1` altında; `/health` versiyonsuz. Neyin breaking change sayıldığı ve nedenleri [ADR-0003](docs/adr/0003-api-versioning.md)'te.
 
 - `version`, `pyproject.toml` içindeki `[project].version` değerinden okunur (`app/__init__.py` → `__version__`). Sürüm değiştirince `uv sync` çalıştır, yoksa eski sürüm görünür. `pyproject.toml`'daki `[build-system]` bu yüzden gerekli, silme (neden: [ADR-0002](docs/adr/0002-version-source.md)).
