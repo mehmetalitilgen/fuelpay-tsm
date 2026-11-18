@@ -2,7 +2,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Literal
 
-from app.repositories.errors import ConflictError
+from app.domain.errors import ConflictError
 
 Action = Literal["activate", "suspend", "decommission"]
 Status = Literal["registered", "active", "suspended", "decommissioned"]

@@ -2,11 +2,11 @@ import uuid
 from datetime import UTC, datetime
 from itertools import islice
 
-from app.domain.terminal_status import Action, next_status
-from app.repositories.errors import (
+from app.domain.errors import (
     DuplicatePumpNumberError,
     DuplicateSerialNumberError,
 )
+from app.domain.terminal_status import Action, next_status
 from app.schemas.pagination import DEFAULT_PAGE_LIMIT
 from app.schemas.terminals import TerminalCreate, TerminalRead
 
@@ -79,11 +79,6 @@ class TerminalRepository:
     async def change_status(
         self, terminal_id: uuid.UUID, action: Action, reason: str | None = None
     ) -> TerminalRead | None:
-        """Geçiş tablosuna (app.domain) göre durumu değiştirir.
-
-        Terminal yoksa None döner; geçiş geçersizse InvalidStatusTransitionError
-        fırlatır ve kayda dokunmaz.
-        """
         terminal = self.terminals.get(terminal_id)
         if terminal is None:
             return None

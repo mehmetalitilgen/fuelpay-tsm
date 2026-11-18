@@ -10,11 +10,11 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.domain.terminal_status import InvalidStatusTransitionError
-from app.repositories.errors import (
+from app.domain.errors import (
     DuplicatePumpNumberError,
     DuplicateSerialNumberError,
 )
+from app.domain.terminal_status import InvalidStatusTransitionError
 from app.repositories.terminals import TerminalRepository
 from app.schemas.terminals import TerminalCreate, TerminalRead
 

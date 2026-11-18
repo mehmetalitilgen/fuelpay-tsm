@@ -45,3 +45,4 @@ Kurallar dağılırsa (router'larda `if` zincirleri, ileride Celery task'larınd
 - **Olumsuz:** Durum geçmişi tutulmuyor; yalnızca son geçişin zamanı var. Denetim için olay tablosu Epic 4/10'da eklenecek.
 - **Olumsuz:** Eşzamanlı iki geçiş bugün tek process'te sırayla işlenir; veritabanı geldiğinde (Epic 4) koşullu `UPDATE ... WHERE status = ...` ya da kilitleme gerekecek.
 - **Not:** `InvalidStatusTransitionError`, `app.repositories.errors.ConflictError`'dan türüyor; böylece mevcut 409 handler'ı onu da yakalıyor. Bedeli: domain modülü repository paketine bağımlı. `ConflictError` ileride domain katmanına taşınabilir.
+- **Güncelleme (FTSM-006, 2026-11-18):** `ConflictError` ve diğer hata sınıfları `app/domain/errors.py`'ye taşındı, `app/repositories/errors.py` silindi. Domain → repositories bağımlılığı kalktı.

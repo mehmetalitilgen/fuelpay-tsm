@@ -9,6 +9,7 @@ from typing import get_args
 
 import pytest
 
+from app.domain.errors import ConflictError
 from app.domain.terminal_status import (
     TRANSITIONS,
     Action,
@@ -16,7 +17,6 @@ from app.domain.terminal_status import (
     Status,
     next_status,
 )
-from app.repositories.errors import ConflictError
 
 # (mevcut durum, eylem) -> yeni durum
 VALID = {

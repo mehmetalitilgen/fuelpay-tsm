@@ -21,3 +21,19 @@ class DuplicatePumpNumberError(ConflictError):
             message
             or f"Duplicate pump number {pump_number} for station '{station_id}'."
         )
+
+
+class NotFoundError(Exception):
+    pass
+
+
+class StationNotFoundError(NotFoundError):
+    def __init__(self, station_id: uuid.UUID, message: str | None = None):
+        self.station_id = station_id
+        super().__init__(message or f"Station {station_id} not found")
+
+
+class TerminalNotFoundError(NotFoundError):
+    def __init__(self, terminal_id: uuid.UUID, message: str | None = None):
+        self.terminal_id = terminal_id
+        super().__init__(message or f"Terminal {terminal_id} not found")
