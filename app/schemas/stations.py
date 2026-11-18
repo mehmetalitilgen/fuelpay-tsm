@@ -3,9 +3,6 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-DEFAULT_PAGE_LIMIT = 50
-MAX_PAGE_LIMIT = 100
-
 
 class StationBase(BaseModel):
     code: str

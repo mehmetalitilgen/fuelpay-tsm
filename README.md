@@ -52,16 +52,28 @@ Ayarlar `app/core/config.py` içindeki `Settings` sınıfında tanımlı ve `pyd
 | POST  | `/api/v1/stations/{station_id}/terminals` | 201 terminal + `Location: /api/v1/terminals/{id}` header'ı                        | 404 istasyon yok · 409 seri no ya da pompa dolu · 422 geçersiz gövde |
 | GET   | `/api/v1/stations/{station_id}/terminals` | 200 `{"items": [...], "total": n, "limit": 50, "offset": 0}` (yalnızca o istasyon) | 404 istasyon yok · 422 `offset < 0` ya da `limit` 1–100 dışında |
 | GET   | `/api/v1/terminals/{id}`     | 200 terminal                                                                                   | 404 bulunamadı · 422 `id` geçerli UUID değil   |
+| POST  | `/api/v1/terminals/{id}/activate`     | 200 terminal (`active`)                                                     | 404 terminal yok · 409 geçersiz geçiş · 422 `id` geçerli UUID değil |
+| POST  | `/api/v1/terminals/{id}/suspend`      | 200 terminal (`suspended`); gövde `{"reason": "..."}`                       | 404 · 409 · 422 geçersiz UUID ya da gövde |
+| POST  | `/api/v1/terminals/{id}/decommission` | 200 terminal (`decommissioned`)                                             | 404 · 409 · 422 |
 
 **İstasyon:** `{"id": "<uuid>", "code": "34-001", "name": "...", "city": "...", "created_at": "<ISO 8601, timezone'lu>"}`
 
-**Terminal:** `{"id": "<uuid>", "station_id": "<uuid>", "serial_number": "TRM00001", "pump_number": 1, "status": "registered", "created_at": "<ISO 8601, timezone'lu>"}`
+**Terminal:** `{"id": "<uuid>", "station_id": "<uuid>", "serial_number": "TRM00001", "pump_number": 1, "status": "registered", "created_at": "<ISO 8601, timezone'lu>", "status_changed_at": null, "suspension_reason": null}`
 
 - **Terminal POST gövdesi:** `serial_number` ve `pump_number`, ikisi de zorunlu. `id`, `station_id`, `status` gibi başka alanlar 422 döner; istasyon URL'den gelir.
   - `serial_number`: 8–16 karakter, yalnızca `A–Z` ve `0–9`. Baştaki ve sondaki boşluk kırpılır, büyük harfe çevrilir (`trm00001` → `TRM00001`). ASCII dışı harfler (`İ`, `ı`, `ß`…) dönüştürülmez, 422 döner.
-  - `pump_number`: 1–32 arası tam sayı. `true`/`false` 422 döner. String olarak `"3"` şu an `3` kabul ediliyor (açık soru, bkz. [FTSM-004 teslimat notu](docs/delivery/FTSM-004.md)).
+  - `pump_number`: 1–32 arası JSON tam sayısı (strict). `"3"`, `3.0` ve `true` 422 döner.
 - **Terminal listesi:** İstasyon bazlıdır; tüm istasyonları dönen bir `GET /api/v1/terminals` yoktur. `pump_number`'a göre artan sırada döner; sayfalama bu sıraya göre yapılır.
-- **Tekillik:** `serial_number` tüm sistemde tekildir; aynı seri numarası başka bir istasyonda da 409 döner, harf büyüklüğü fark etmez. `pump_number` istasyon başına tekildir; aynı pompa numarası başka bir istasyonda kullanılabilir.
+- **Tekillik:** `serial_number` tüm sistemde tekildir; aynı seri numarası başka bir istasyonda da 409 döner, harf büyüklüğü fark etmez. `pump_number` istasyon başına tekildir; aynı pompa numarası başka bir istasyonda kullanılabilir. Hizmetten çıkarılan (`decommissioned`) terminal pompasını serbest bırakır, seri numarasını bırakmaz.
+- **Terminal durumları** ([ADR-0004](docs/adr/0004-terminal-status-machine.md)):
+
+  | İşlem | İzin verilen durumlar | Sonuç |
+  |---|---|---|
+  | `activate` | `registered`, `suspended` | `active` |
+  | `suspend` (gövde: `reason`, 1–200 karakter, kırpılır) | `active` | `suspended` |
+  | `decommission` | `registered`, `active`, `suspended` | `decommissioned` (son durum) |
+
+  Tabloda olmayan her geçiş, aynı duruma geçiş dahil, 409 döner. `suspension_reason` yalnızca `suspended` iken doludur; `status_changed_at` son geçişin zamanıdır. Kurallar `app/domain/terminal_status.py` içinde tek yerde durur.
 
 - **POST gövdesi:** `code`, `name`, `city`, üçü de zorunlu. `code` biçimi `NN-NNN` (ör. `34-001`). `name` 1–100, `city` 1–50 karakter olmalı. Baştaki ve sondaki boşluklar kırpılır.
 - **Hata gövdesi:** 404 ve 409 yanıtları `{"detail": "..."}` biçimindedir ve OpenAPI'de `ErrorResponse` şemasıyla belgelenmiştir (`/docs`).

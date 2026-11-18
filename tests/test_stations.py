@@ -243,6 +243,17 @@ def test_list_rejects_invalid_pagination(client, params):
     assert response.status_code == 422
 
 
+def test_list_accepts_min_limit(client):
+    create_station(client, code="34-001")
+    create_station(client, code="34-002")
+
+    response = client.get(STATIONS_URL, params={"limit": 1})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert (len(body["items"]), body["total"], body["limit"]) == (1, 2, 1)
+
+
 def test_list_accepts_max_limit(client):
     response = client.get(STATIONS_URL, params={"limit": 100})
     assert response.status_code == 200

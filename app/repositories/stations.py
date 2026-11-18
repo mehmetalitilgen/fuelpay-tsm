@@ -2,7 +2,8 @@ import uuid
 from datetime import UTC, datetime
 from itertools import islice
 
-from app.schemas.stations import DEFAULT_PAGE_LIMIT, StationCreate, StationRead
+from app.schemas.pagination import DEFAULT_PAGE_LIMIT
+from app.schemas.stations import StationCreate, StationRead
 
 
 class StationRepository:

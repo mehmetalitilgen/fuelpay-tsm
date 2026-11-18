@@ -1,14 +1,9 @@
 import uuid
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-DEFAULT_PAGE_LIMIT = 50
-MAX_PAGE_LIMIT = 100
-
-
-type Status = Literal["registered"]
+from app.domain.terminal_status import Status
 
 
 class TerminalBase(BaseModel):
@@ -20,7 +15,7 @@ class TerminalCreate(TerminalBase):
     model_config = ConfigDict(extra="forbid")
 
     serial_number: str = Field(min_length=8, max_length=16, pattern=r"^[A-Z0-9]{8,16}$")
-    pump_number: int = Field(ge=1, le=32, strict=False)
+    pump_number: int = Field(ge=1, le=32, strict=True)
 
     @field_validator("serial_number", mode="before")
     @classmethod
@@ -31,13 +26,6 @@ class TerminalCreate(TerminalBase):
             return value.strip().upper()
         return value
 
-    @field_validator("pump_number", mode="before")
-    @classmethod
-    def reject_bool(cls, value: object) -> object:
-        if isinstance(value, bool):
-            raise ValueError("pump_number must be an integer, not a boolean")
-        return value
-
 
 class TerminalRead(TerminalBase):
     id: uuid.UUID
@@ -46,6 +34,13 @@ class TerminalRead(TerminalBase):
     pump_number: int
     status: Status
     created_at: datetime
+    status_changed_at: datetime | None = Field(default=None)
+    suspension_reason: str | None = Field(default=None)
+
+
+class TerminalSuspend(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    reason: str = Field(min_length=1, max_length=200)
 
 
 class TerminalList(BaseModel):

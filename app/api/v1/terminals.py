@@ -4,9 +4,16 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 
 from app.api.deps import StationRepoDep, TerminalRepoDep
+from app.domain.terminal_status import Action
+from app.repositories.terminals import TerminalRepository
 from app.schemas.errors import error_response
-from app.schemas.stations import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT
-from app.schemas.terminals import TerminalCreate, TerminalList, TerminalRead
+from app.schemas.pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT
+from app.schemas.terminals import (
+    TerminalCreate,
+    TerminalList,
+    TerminalRead,
+    TerminalSuspend,
+)
 
 router = APIRouter(tags=["terminals"])
 
@@ -39,7 +46,9 @@ async def add_terminal(
 
     terminal = await terminal_repo.add(station_id, payload)
 
-    response.headers["Location"] = f"/api/v1/terminals/{terminal.id}"
+    response.headers["Location"] = str(
+        request.url_for("get_terminal", terminal_id=terminal.id)
+    )
     return terminal
 
 
@@ -87,3 +96,61 @@ async def get_terminal(
             detail=f"Terminal {terminal_id} not found",
         )
     return terminal
+
+
+STATUS_CHANGE_RESPONSES = {
+    404: error_response("Terminal bulunamadı"),
+    409: error_response("Bu işlem terminalin mevcut durumunda yapılamaz"),
+}
+
+
+async def _change_status_or_404(
+    repo: TerminalRepository,
+    terminal_id: uuid.UUID,
+    action: Action,
+    reason: str | None = None,
+) -> TerminalRead:
+    terminal = await repo.change_status(terminal_id, action, reason)
+    if terminal is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Terminal {terminal_id} not found",
+        )
+    return terminal
+
+
+@router.post(
+    "/terminals/{terminal_id}/activate",
+    response_model=TerminalRead,
+    responses=STATUS_CHANGE_RESPONSES,
+)
+async def activate_terminal(
+    terminal_id: uuid.UUID,
+    repo: TerminalRepoDep,
+) -> TerminalRead:
+    return await _change_status_or_404(repo, terminal_id, "activate")
+
+
+@router.post(
+    "/terminals/{terminal_id}/suspend",
+    response_model=TerminalRead,
+    responses=STATUS_CHANGE_RESPONSES,
+)
+async def suspend_terminal(
+    terminal_id: uuid.UUID,
+    payload: TerminalSuspend,
+    repo: TerminalRepoDep,
+) -> TerminalRead:
+    return await _change_status_or_404(repo, terminal_id, "suspend", payload.reason)
+
+
+@router.post(
+    "/terminals/{terminal_id}/decommission",
+    response_model=TerminalRead,
+    responses=STATUS_CHANGE_RESPONSES,
+)
+async def decommission_terminal(
+    terminal_id: uuid.UUID,
+    repo: TerminalRepoDep,
+) -> TerminalRead:
+    return await _change_status_or_404(repo, terminal_id, "decommission")

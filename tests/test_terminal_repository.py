@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from app.domain.terminal_status import InvalidStatusTransitionError
 from app.repositories.errors import (
     DuplicatePumpNumberError,
     DuplicateSerialNumberError,
@@ -58,7 +59,7 @@ async def test_two_terminals_on_same_station_are_both_kept(repo):
     second = await repo.add(STATION_A, terminal_in("TRM00002", 2))
 
     assert first.id != second.id
-    assert await repo.get_sum() == 2
+    assert await repo.count_by_station(STATION_A) == 2
     assert await repo.get_by_id(first.id) == first
     assert await repo.get_by_id(second.id) == second
 
@@ -108,7 +109,8 @@ async def test_failed_add_stores_nothing(repo):
     with pytest.raises(DuplicatePumpNumberError):
         await repo.add(STATION_A, terminal_in("TRM00002", 1))
 
-    assert await repo.get_sum() == 1
+    assert await repo.count_by_station(STATION_A) == 1
+    assert await repo.count_by_station(STATION_B) == 0
 
 
 # --- get_by_id ---
@@ -125,19 +127,12 @@ async def test_get_by_id_does_not_match_station_id(repo):
     assert await repo.get_by_id(STATION_A) is None
 
 
-# --- Boş depo / get_sum ---
+# --- Boş depo ---
 
 
 async def test_empty_repository(repo):
     assert await repo.list_by_station(STATION_A) == []
     assert await repo.count_by_station(STATION_A) == 0
-    assert await repo.get_sum() == 0
-
-
-async def test_get_sum_counts_all_stations(repo):
-    await repo.add(STATION_A, terminal_in("TRM00001", 1))
-    await repo.add(STATION_B, terminal_in("TRM00002", 1))
-    assert await repo.get_sum() == 2
 
 
 # --- list_by_station / count_by_station ---
@@ -223,4 +218,91 @@ async def test_repositories_do_not_share_state():
     first, second = TerminalRepository(), TerminalRepository()
     await first.add(STATION_A, terminal_in())
 
-    assert await second.get_sum() == 0
+    assert await second.count_by_station(STATION_A) == 0
+
+
+# --- change_status ---
+
+
+async def test_change_status_applies_valid_transition(repo):
+    created = await repo.add(STATION_A, terminal_in())
+    before = datetime.now(UTC)
+
+    activated = await repo.change_status(created.id, "activate")
+
+    assert activated.status == "active"
+    assert before <= activated.status_changed_at <= datetime.now(UTC)
+    assert activated.suspension_reason is None
+    assert await repo.get_by_id(created.id) == activated
+
+
+async def test_change_status_rejects_invalid_transition_and_keeps_record(repo):
+    created = await repo.add(STATION_A, terminal_in())
+
+    with pytest.raises(InvalidStatusTransitionError):
+        await repo.change_status(created.id, "suspend", "Arıza")
+
+    assert await repo.get_by_id(created.id) == created
+
+
+async def test_change_status_returns_none_for_unknown_terminal(repo):
+    assert await repo.change_status(uuid.uuid4(), "activate") is None
+
+
+async def test_suspension_reason_is_kept_only_while_suspended(repo):
+    created = await repo.add(STATION_A, terminal_in())
+    await repo.change_status(created.id, "activate")
+
+    suspended = await repo.change_status(created.id, "suspend", "Kart okuyucu arızası")
+    assert suspended.suspension_reason == "Kart okuyucu arızası"
+
+    reactivated = await repo.change_status(created.id, "activate")
+    assert reactivated.suspension_reason is None
+
+
+async def test_reason_is_ignored_for_non_suspend_actions(repo):
+    created = await repo.add(STATION_A, terminal_in())
+
+    activated = await repo.change_status(created.id, "activate", "gereksiz")
+
+    assert activated.suspension_reason is None
+
+
+async def test_mutating_returned_status_does_not_change_repository(repo):
+    created = await repo.add(STATION_A, terminal_in())
+    activated = await repo.change_status(created.id, "activate")
+
+    activated.status = "decommissioned"
+
+    assert (await repo.get_by_id(created.id)).status == "active"
+
+
+# --- Hizmetten çıkarma: pompa serbest kalır, seri numarası kalmaz ---
+
+
+async def test_decommissioned_terminal_frees_its_pump(repo):
+    old = await repo.add(STATION_A, terminal_in("OLDDEV001", 3))
+    await repo.change_status(old.id, "decommission")
+
+    new = await repo.add(STATION_A, terminal_in("NEWDEV001", 3))
+
+    assert new.pump_number == 3
+    assert await repo.count_by_station(STATION_A) == 2
+
+
+@pytest.mark.parametrize("actions", [(), ("activate",), ("activate", "suspend")])
+async def test_non_decommissioned_terminal_keeps_its_pump(repo, actions):
+    old = await repo.add(STATION_A, terminal_in("OLDDEV001", 3))
+    for action in actions:
+        await repo.change_status(old.id, action, "Arıza")
+
+    with pytest.raises(DuplicatePumpNumberError):
+        await repo.add(STATION_A, terminal_in("NEWDEV001", 3))
+
+
+async def test_decommissioned_terminal_keeps_its_serial_number(repo):
+    old = await repo.add(STATION_A, terminal_in("OLDDEV001", 3))
+    await repo.change_status(old.id, "decommission")
+
+    with pytest.raises(DuplicateSerialNumberError):
+        await repo.add(STATION_B, terminal_in("OLDDEV001", 1))

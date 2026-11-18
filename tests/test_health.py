@@ -61,6 +61,12 @@ def test_unknown_path_returns_404(client):
     assert response.json() == {"detail": "Not Found"}
 
 
+def test_health_is_not_served_under_api_version_prefix(client):
+    # ADR-0003: /health versiyonsuzdur; /api/v1/health diye bir adres yok.
+    response = client.get("/api/v1/health")
+    assert response.status_code == 404
+
+
 # --- HTTP metodları ---
 
 

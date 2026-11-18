@@ -5,9 +5,8 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 
 from app.api.deps import StationRepoDep
 from app.schemas.errors import error_response
+from app.schemas.pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT
 from app.schemas.stations import (
-    DEFAULT_PAGE_LIMIT,
-    MAX_PAGE_LIMIT,
     StationCreate,
     StationList,
     StationRead,

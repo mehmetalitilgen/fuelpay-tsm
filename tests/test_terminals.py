@@ -26,6 +26,8 @@ TERMINAL_FIELDS = {
     "pump_number",
     "status",
     "created_at",
+    "status_changed_at",
+    "suspension_reason",
 }
 
 
@@ -64,6 +66,9 @@ def test_create_returns_201_with_registered_terminal(client, station):
     assert body["status"] == "registered"
     assert str(uuid.UUID(body["id"])) == body["id"]
     assert datetime.fromisoformat(body["created_at"]).tzinfo is not None
+    # Yeni terminal hiç durum değiştirmedi ve askıya alınmadı.
+    assert body["status_changed_at"] is None
+    assert body["suspension_reason"] is None
 
 
 def test_create_sets_location_header_to_new_terminal(client, station):
@@ -220,7 +225,22 @@ def test_create_rejects_invalid_serial_number(client, station, serial):
     assert response.status_code == 422
 
 
-@pytest.mark.parametrize("pump", [0, 33, -1, 3.5, True, False, None, "üç"])
+@pytest.mark.parametrize(
+    "pump",
+    [
+        0,
+        33,
+        -1,
+        3.5,
+        3.0,  # tam sayı değerli float da tam sayı değildir
+        "3",  # sayı string'i
+        " 4 ",  # boşluklu sayı string'i
+        True,
+        False,
+        None,
+        "üç",
+    ],
+)
 def test_create_rejects_invalid_pump_number(client, station, pump):
     response = post_terminal(client, station["id"], pump_number=pump)
     assert response.status_code == 422
@@ -381,6 +401,13 @@ def test_list_paginates_within_station(client, station, other_station):
     assert (body["total"], body["offset"], body["limit"]) == (5, 1, 2)
 
 
+def test_list_accepts_min_limit(client, station):
+    response = client.get(station_terminals_url(station["id"]), params={"limit": 1})
+
+    assert response.status_code == 200
+    assert response.json()["limit"] == 1
+
+
 @pytest.mark.parametrize("params", [{"limit": 0}, {"limit": 101}, {"offset": -1}])
 def test_list_rejects_invalid_pagination(client, station, params):
     response = client.get(station_terminals_url(station["id"]), params=params)
@@ -445,3 +472,258 @@ def test_terminal_error_bodies_match_documented_schema(client, station):
     for response in (serial_conflict, pump_conflict, missing_station, missing_terminal):
         assert set(response.json()) == {"detail"}
         assert isinstance(response.json()["detail"], str)
+
+
+# --- Durum geçişleri (FTSM-005) ---
+
+STATUS_ACTIONS = ("activate", "suspend", "decommission")
+# Bir terminali API üzerinden istenen duruma getiren işlem dizileri.
+PATH_TO_STATUS = {
+    "registered": (),
+    "active": ("activate",),
+    "suspended": ("activate", "suspend"),
+    "decommissioned": ("decommission",),
+}
+
+
+def status_url(terminal_id, action: str) -> str:
+    return f"{TERMINALS_URL}/{terminal_id}/{action}"
+
+
+def apply(client, terminal_id, action: str, reason: str = "Kart okuyucu arızası"):
+    body = {"reason": reason} if action == "suspend" else None
+    return client.post(status_url(terminal_id, action), json=body)
+
+
+def terminal_in_status(client, station_id, wanted: str, **overrides) -> dict:
+    terminal = create_terminal(client, station_id, **overrides)
+    for action in PATH_TO_STATUS[wanted]:
+        response = apply(client, terminal["id"], action)
+        assert response.status_code == 200, response.text
+        terminal = response.json()
+    return terminal
+
+
+def test_new_terminal_has_no_status_history(client, station):
+    terminal = create_terminal(client, station["id"])
+
+    assert terminal["status"] == "registered"
+    assert terminal["status_changed_at"] is None
+    assert terminal["suspension_reason"] is None
+
+
+def test_full_lifecycle(client, station):
+    terminal = create_terminal(client, station["id"], serial_number="FP2A7K91X3")
+    url = f"{TERMINALS_URL}/{terminal['id']}"
+    steps = [
+        ("activate", "active", None),
+        ("suspend", "suspended", "Kart okuyucu arızası"),
+        ("activate", "active", None),
+        ("decommission", "decommissioned", None),
+    ]
+
+    previous_change = None
+    for action, expected_status, expected_reason in steps:
+        response = apply(client, terminal["id"], action)
+
+        assert response.status_code == 200, (action, response.text)
+        body = response.json()
+        assert (body["status"], body["suspension_reason"]) == (
+            expected_status,
+            expected_reason,
+        )
+        changed_at = datetime.fromisoformat(body["status_changed_at"])
+        assert changed_at.tzinfo is not None
+        if previous_change is not None:
+            assert changed_at >= previous_change
+        previous_change = changed_at
+        assert client.get(url).json() == body
+
+
+# Beklenen sonuçlar elle yazılı (ADR-0004); geçiş tablosundan türetilmez.
+EXPECTED_STATUS_CODES = {
+    ("registered", "activate"): 200,
+    ("registered", "suspend"): 409,
+    ("registered", "decommission"): 200,
+    ("active", "activate"): 409,
+    ("active", "suspend"): 200,
+    ("active", "decommission"): 200,
+    ("suspended", "activate"): 200,
+    ("suspended", "suspend"): 409,
+    ("suspended", "decommission"): 200,
+    ("decommissioned", "activate"): 409,
+    ("decommissioned", "suspend"): 409,
+    ("decommissioned", "decommission"): 409,
+}
+
+
+@pytest.mark.parametrize(("current", "action"), sorted(EXPECTED_STATUS_CODES))
+def test_status_transition_matrix(client, station, current, action):
+    terminal = terminal_in_status(client, station["id"], current)
+
+    response = apply(client, terminal["id"], action)
+
+    assert response.status_code == EXPECTED_STATUS_CODES[(current, action)]
+    if response.status_code == 409:
+        assert action in response.json()["detail"]
+        unchanged = client.get(f"{TERMINALS_URL}/{terminal['id']}").json()
+        assert unchanged == terminal
+
+
+def test_suspend_strips_reason(client, station):
+    terminal = terminal_in_status(client, station["id"], "active")
+
+    response = apply(client, terminal["id"], "suspend", reason="  Kart okuyucu  ")
+
+    assert response.json()["suspension_reason"] == "Kart okuyucu"
+
+
+def test_suspend_accepts_200_character_reason(client, station):
+    terminal = terminal_in_status(client, station["id"], "active")
+
+    response = apply(client, terminal["id"], "suspend", reason="r" * 200)
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        None,
+        {},
+        {"reason": ""},
+        {"reason": "   "},
+        {"reason": "r" * 201},
+        {"reason": 5},
+        {"reason": "Arıza", "status": "active"},
+    ],
+)
+def test_suspend_rejects_invalid_body(client, station, body):
+    terminal = terminal_in_status(client, station["id"], "active")
+
+    response = client.post(status_url(terminal["id"], "suspend"), json=body)
+
+    assert response.status_code == 422
+    assert client.get(f"{TERMINALS_URL}/{terminal['id']}").json() == terminal
+
+
+@pytest.mark.parametrize("action", STATUS_ACTIONS)
+def test_status_change_on_unknown_terminal_returns_404(client, action):
+    response = apply(client, uuid.uuid4(), action)
+    assert response.status_code == 404
+
+
+@pytest.mark.parametrize("action", STATUS_ACTIONS)
+def test_status_change_with_invalid_uuid_returns_422(client, action):
+    response = apply(client, "not-a-uuid", action)
+    assert response.status_code == 422
+
+
+def test_body_is_validated_before_terminal_lookup(client):
+    response = client.post(status_url(uuid.uuid4(), "suspend"), json={"reason": ""})
+    assert response.status_code == 422
+
+
+def test_decommissioned_terminal_frees_its_pump(client, station):
+    terminal_in_status(
+        client,
+        station["id"],
+        "decommissioned",
+        serial_number="OLDDEV001",
+        pump_number=3,
+    )
+
+    response = post_terminal(
+        client, station["id"], serial_number="NEWDEV001", pump_number=3
+    )
+
+    assert response.status_code == 201
+    pumps = [
+        (t["pump_number"], t["status"])
+        for t in client.get(station_terminals_url(station["id"])).json()["items"]
+    ]
+    assert sorted(pumps) == [(3, "decommissioned"), (3, "registered")]
+
+
+def test_suspended_terminal_keeps_its_pump(client, station):
+    terminal_in_status(
+        client, station["id"], "suspended", serial_number="OLDDEV001", pump_number=3
+    )
+
+    response = post_terminal(
+        client, station["id"], serial_number="NEWDEV001", pump_number=3
+    )
+
+    assert response.status_code == 409
+
+
+def test_decommissioned_serial_number_cannot_be_reused(client, station, other_station):
+    terminal_in_status(
+        client,
+        station["id"],
+        "decommissioned",
+        serial_number="OLDDEV001",
+        pump_number=3,
+    )
+
+    response = post_terminal(
+        client, other_station["id"], serial_number="olddev001", pump_number=1
+    )
+
+    assert response.status_code == 409
+
+
+def test_list_shows_current_status(client, station):
+    terminal_in_status(
+        client, station["id"], "suspended", serial_number="TRM00001", pump_number=1
+    )
+    terminal_in_status(
+        client, station["id"], "active", serial_number="TRM00002", pump_number=2
+    )
+
+    items = client.get(station_terminals_url(station["id"])).json()["items"]
+
+    assert [(t["pump_number"], t["status"]) for t in items] == [
+        (1, "suspended"),
+        (2, "active"),
+    ]
+
+
+@pytest.mark.parametrize("action", STATUS_ACTIONS)
+@pytest.mark.parametrize("code", [404, 409])
+def test_openapi_documents_status_change_errors(openapi, action, code):
+    path = f"/api/v1/terminals/{{terminal_id}}/{action}"
+    assert documented_error_schema(openapi, "post", path, code) == ERROR_SCHEMA
+
+
+@pytest.mark.parametrize("action", STATUS_ACTIONS)
+def test_openapi_status_change_returns_terminal(openapi, action):
+    path = f"/api/v1/terminals/{{terminal_id}}/{action}"
+    operation = openapi["paths"][path]["post"]
+
+    assert operation["tags"] == ["terminals"]
+    schema = operation["responses"]["200"]["content"]["application/json"]["schema"]
+    assert schema == {"$ref": "#/components/schemas/TerminalRead"}
+
+
+def test_openapi_status_enum_lists_all_states(openapi):
+    schemas = openapi["components"]["schemas"]
+    status_schema = schemas["TerminalRead"]["properties"]["status"]
+    if "$ref" in status_schema:
+        status_schema = schemas[status_schema["$ref"].rsplit("/", 1)[-1]]
+    assert status_schema["enum"] == [
+        "registered",
+        "active",
+        "suspended",
+        "decommissioned",
+    ]
+
+
+def test_openapi_only_suspend_takes_a_body(openapi):
+    paths = openapi["paths"]
+    has_body = {
+        action: "requestBody"
+        in paths[f"/api/v1/terminals/{{terminal_id}}/{action}"]["post"]
+        for action in STATUS_ACTIONS
+    }
+    assert has_body == {"activate": False, "suspend": True, "decommission": False}
