@@ -1,6 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 from itertools import islice
+from typing import Any
 
 from app.schemas.pagination import DEFAULT_PAGE_LIMIT
 from app.schemas.stations import StationCreate, StationRead
@@ -8,7 +9,7 @@ from app.schemas.stations import StationCreate, StationRead
 
 class StationRepository:
     def __init__(self) -> None:
-        self.stations: dict[uuid.UUID, dict] = {}
+        self.stations: dict[uuid.UUID, Any] = {}
 
     async def add(self, station: StationCreate) -> StationRead:
         station_id = uuid.uuid4()

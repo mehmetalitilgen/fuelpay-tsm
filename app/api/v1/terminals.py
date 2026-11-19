@@ -1,5 +1,5 @@
 import uuid
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, Request, Response, status
 
@@ -71,7 +71,7 @@ async def get_terminal(
     return terminal
 
 
-STATUS_CHANGE_RESPONSES = {
+STATUS_CHANGE_RESPONSES: dict[int | str, dict[str, Any]] = {
     404: error_response("Terminal bulunamadı"),
     409: error_response("Bu işlem terminalin mevcut durumunda yapılamaz"),
 }

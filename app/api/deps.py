@@ -8,11 +8,13 @@ from app.services.terminals import TerminalService
 
 
 async def get_station_repo(request: Request) -> StationRepository:
-    return request.app.state.station_repo
+    repo: StationRepository = request.app.state.station_repo
+    return repo
 
 
 async def get_terminal_repo(request: Request) -> TerminalRepository:
-    return request.app.state.terminal_repo
+    repo: TerminalRepository = request.app.state.terminal_repo
+    return repo
 
 
 StationRepoDep = Annotated[StationRepository, Depends(get_station_repo)]

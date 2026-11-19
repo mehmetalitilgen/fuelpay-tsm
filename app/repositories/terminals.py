@@ -1,6 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 from itertools import islice
+from typing import Any
 
 from app.domain.errors import (
     DuplicatePumpNumberError,
@@ -13,7 +14,7 @@ from app.schemas.terminals import TerminalCreate, TerminalRead
 
 class TerminalRepository:
     def __init__(self) -> None:
-        self.terminals: dict[uuid.UUID, dict] = {}
+        self.terminals: dict[uuid.UUID, dict[str, Any]] = {}
 
     async def add(
         self, station_id: uuid.UUID, terminal: TerminalCreate

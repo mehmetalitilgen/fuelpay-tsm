@@ -19,7 +19,7 @@ class TerminalCreate(TerminalBase):
 
     @field_validator("serial_number", mode="before")
     @classmethod
-    def strip_and_upper(cls, value: object) -> str:
+    def strip_and_upper(cls, value: object) -> object:
         if isinstance(value, str):
             if not value.isascii():
                 raise ValueError("serial_number must contain only A-Z and 0-9")

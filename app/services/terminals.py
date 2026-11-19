@@ -1,13 +1,15 @@
 import uuid
 
 from app.domain.errors import StationNotFoundError, TerminalNotFoundError
-from app.repositories.stations import StationRepository
-from app.repositories.terminals import TerminalRepository
+from app.domain.terminal_status import Action
 from app.schemas.terminals import TerminalCreate, TerminalRead
+from app.services.ports import StationRepositoryPort, TerminalRepositoryPort
 
 
 class TerminalService:
-    def __init__(self, stations: StationRepository, terminals: TerminalRepository):
+    def __init__(
+        self, stations: StationRepositoryPort, terminals: TerminalRepositoryPort
+    ):
         self.stations = stations
         self.terminals = terminals
 
@@ -41,7 +43,7 @@ class TerminalService:
         return items, total
 
     async def change_status(
-        self, terminal_id: uuid.UUID, action: str, reason: str | None = None
+        self, terminal_id: uuid.UUID, action: Action, reason: str | None = None
     ) -> TerminalRead:
 
         terminal = await self.terminals.change_status(terminal_id, action, reason)

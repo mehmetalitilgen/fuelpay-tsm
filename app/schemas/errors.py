@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -11,6 +13,6 @@ class ErrorResponse(BaseModel):
     detail: str
 
 
-def error_response(description: str) -> dict:
+def error_response(description: str) -> dict[str, Any]:
     """Decorator'daki `responses=` için tek bir hata kodunun tanımı."""
     return {"model": ErrorResponse, "description": description}
